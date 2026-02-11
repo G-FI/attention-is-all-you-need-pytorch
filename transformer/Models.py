@@ -69,10 +69,14 @@ class Encoder(nn.Module):
         enc_slf_attn_list = []
 
         # -- Forward
+        # 向量的embedding是在forward里面进行的，那也就是回对embedding算梯度
+        # enc_output.size() == (batch_size, seq_len, d_model)
         enc_output = self.src_word_emb(src_seq)
         if self.scale_emb:
             enc_output *= self.d_model ** 0.5
+        # position encode之后再进行dropout
         enc_output = self.dropout(self.position_enc(enc_output))
+        # layer_norm
         enc_output = self.layer_norm(enc_output)
 
         for enc_layer in self.layer_stack:
@@ -128,6 +132,12 @@ class Decoder(nn.Module):
 class Transformer(nn.Module):
     ''' A sequence to sequence model with attention mechanism. '''
 
+    '''
+        n_src_vocab: source vocabulary size
+        n_trg_vocab: target vocabulary size
+        d_word_vec: dimension of word vector
+
+    '''
     def __init__(
             self, n_src_vocab, n_trg_vocab, src_pad_idx, trg_pad_idx,
             d_word_vec=512, d_model=512, d_inner=2048,
@@ -185,8 +195,13 @@ class Transformer(nn.Module):
 
 
     def forward(self, src_seq, trg_seq):
+        '''
+        src_seq: [batch_size, seq_len, world_dim]
+        trg_seq: [batch_size, seq_len, world_dim]
+        '''
 
         src_mask = get_pad_mask(src_seq, self.src_pad_idx)
+        # 处理padding + teacher forcing
         trg_mask = get_pad_mask(trg_seq, self.trg_pad_idx) & get_subsequent_mask(trg_seq)
 
         enc_output, *_ = self.encoder(src_seq, src_mask)

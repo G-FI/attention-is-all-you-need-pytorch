@@ -16,9 +16,11 @@ class MultiHeadAttention(nn.Module):
         self.d_k = d_k
         self.d_v = d_v
 
+        # (d_model 映射到 n_head * d_k)=> (512, 8 * 64)
         self.w_qs = nn.Linear(d_model, n_head * d_k, bias=False)
         self.w_ks = nn.Linear(d_model, n_head * d_k, bias=False)
         self.w_vs = nn.Linear(d_model, n_head * d_v, bias=False)
+        # (n_head * d_v 映射到 d_model)=> (8 * 64, 512)
         self.fc = nn.Linear(n_head * d_v, d_model, bias=False)
 
         self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5)
@@ -28,7 +30,11 @@ class MultiHeadAttention(nn.Module):
 
 
     def forward(self, q, k, v, mask=None):
-
+        """
+            q.size() == (batch_size, seq_len, d_model)
+            k.size() == (batch_size, seq_len, d_model)
+            v.size() == (batch_size, seq_len, d_model)
+        """
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
         sz_b, len_q, len_k, len_v = q.size(0), q.size(1), k.size(1), v.size(1)
 
@@ -36,6 +42,8 @@ class MultiHeadAttention(nn.Module):
 
         # Pass through the pre-attention projection: b x lq x (n*dv)
         # Separate different heads: b x lq x n x dv
+        # self.w_qs(q).size() == (batch_size, seq_len, n_head * d_k)
+        # sefl.w_qs(q).view(sz_b, len_q, n_head, d_k).size() == (batch_size, seq_len, n_head, d_k)
         q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
         k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
         v = self.w_vs(v).view(sz_b, len_v, n_head, d_v)
@@ -46,9 +54,11 @@ class MultiHeadAttention(nn.Module):
         if mask is not None:
             mask = mask.unsqueeze(1)   # For head axis broadcasting.
 
+        # 输入q.size() == (batch_size, n_head, seq_len, d_k)
+        # 输出 q.size() == (batch_size, n_head, seq_len, d_v)
         q, attn = self.attention(q, k, v, mask=mask)
 
-        # Transpose to move the head dimension back: b x lq x n x dv
+        # Transpose to move the head dimension back: batch_size x seq_len x n_head x dv
         # Combine the last two dimensions to concatenate all the heads together: b x lq x (n*dv)
         q = q.transpose(1, 2).contiguous().view(sz_b, len_q, -1)
         q = self.dropout(self.fc(q))
